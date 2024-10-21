@@ -2,13 +2,13 @@ import os
 import joblib
 import json
 from tqdm import tqdm
-from transformers import AutoProcessor, AutoModelForPreTraining
+from transformers import AutoProcessor, AutoModelForCausalLM
 import torch
 
 # Load the LLaMA 3.2-11B Vision-Instruct model and processor from Hugging Face
 model_name_or_path = "meta-llama/Llama-3.2-11B-Vision-Instruct"
 processor = AutoProcessor.from_pretrained(model_name_or_path)
-model = AutoModelForPreTraining.from_pretrained(model_name_or_path)
+model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
 
 # Move the model to GPU if available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -34,14 +34,11 @@ with open(file, 'r') as f, open(new_file, 'w') as f_write:
         'and make a concise summary:\n'
     )
 
-    # Limit the number of API requests to avoid overloading
-    MAX_REQUESTS = 10
-
     # Read all lines from the file
     lines = f.readlines()
 
     # Iterate over each line (with tqdm for progress tracking)
-    for idx, line in tqdm(enumerate(lines[:MAX_REQUESTS]), total=MAX_REQUESTS):
+    for idx, line in tqdm(enumerate(lines), total=len(lines)):
         # Check if the data is already processed
         if idx < len(data_final):
             continue
@@ -70,12 +67,17 @@ with open(file, 'r') as f, open(new_file, 'w') as f_write:
         # Tokenize the input text for the model
         inputs = processor(text, return_tensors="pt").to(device)
 
-        # Generate the caption using LLaMA
-        outputs = model.generate(**inputs, max_length=100, temperature=0.7)
-        new_text = processor.decode(outputs[0], skip_special_tokens=True)
+        try:
+            # Generate the caption using LLaMA
+            outputs = model.generate(**inputs, max_length=100, temperature=0.7)
+            new_text = processor.decode(outputs[0], skip_special_tokens=True)
 
-        # Save the generated caption
-        new_one_data['caption'] = new_text
+            # Save the generated caption
+            new_one_data['caption'] = new_text
+
+        except Exception as e:
+            print(f"Error processing line {idx}: {e}")
+            continue  # Skip this line if there's an error
 
         # Write the new processed data to the output file
         f_write.write(json.dumps(new_one_data) + "\n")
